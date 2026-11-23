@@ -1,0 +1,50 @@
+:root {
+  color-scheme: light;
+  font: 13px "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #16283b;
+  background: #f4f7fa;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+header { padding: 16px 18px; background: #142d46; color: #fff; }
+h1 { font-size: 19px; margin: 0; }
+h2 { font-size: 14px; margin: 0; }
+main { display: grid; gap: 12px; padding: 15px 18px; }
+section { display: grid; gap: 8px; border-top: 1px solid #cbd6e0; padding-top: 10px; }
+#account-state { color: #486178; margin: 0; }
+.field { display: grid; gap: 5px; }
+select, input, button {
+  min-height: 35px;
+  border: 1px solid #aab9c8;
+  border-radius: 6px;
+  color: inherit;
+  background: #fff;
+  font: inherit;
+  padding: 5px 8px;
+}
+input { width: 100%; }
+button { cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+:is(button, select, input):focus-visible { outline: 2px solid #256fba; outline-offset: 2px; }
+.primary { background: #15558f; border-color: #15558f; color: #fff; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+form { display: grid; gap: 8px; }
+fieldset {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 8px 8px;
+  min-width: 0;
+  border: 1px solid #bdcad6;
+  border-radius: 6px;
+}
+#notice { color: #8a3b19; margin: 0; }
+#results { display: grid; gap: 5px; list-style: none; padding: 0; margin: 0; }
+#results li { display: flex; align-items: center; gap: 7px; }
+#results strong { color: #20384e; }
+#results button { margin-left: auto; min-height: 27px; }
+#results .ok { color: #236146; }
+#results .warn, #results .error { color: #8a3b19; }

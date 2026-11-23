@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>采集与复核</title>
+  <link rel="stylesheet" href="sop.css">
+  <script type="module" src="sop-ui.js"></script>
+</head>
+<body>
+  <main>
+    <section class="card filters" aria-label="任务设置">
+      <label>任务<select id="mode">
+        <option value="review">过杀漏降复核</option>
+        <option value="insect">蚊虫碎膜采集</option>
+        <option value="collection">分类图库采集</option>
+      </select></label>
+      <label>作业日期<input id="date" type="date" required></label>
+      <label>站点<select id="scope"><option value="all">全部四站</option></select></label>
+      <button type="button" id="open-grading">打开自动判等</button>
+      <p id="query-note"></p>
+      <div id="auto-action" class="actions"></div>
+      <ul id="auto-status" aria-live="polite"></ul>
+    </section>
+    <section class="card">
+      <h2>判等结果导入</h2>
+      <p>当天全量原表会跨任务复用。已有原文件时，也可按来源站点导入。</p>
+      <div id="imports" class="imports"></div>
+      <p id="feedback" role="status"></p>
+      <ul id="files"></ul>
+    </section>
+    <section class="card" aria-labelledby="result-heading">
+      <div class="section-title">
+        <h2 id="result-heading"></h2>
+        <div id="output" class="actions"></div>
+      </div>
+      <p id="instructions"></p>
+      <div id="result" class="results"></div>
+    </section>
+  </main>
+</body>
+</html>

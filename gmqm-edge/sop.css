@@ -1,0 +1,54 @@
+:root {
+  font: 15px "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #14283d;
+  background: #f1f5f9;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+h2 { margin: 0; font-size: 19px; }
+main { padding: 10px; display: grid; gap: 10px; }
+.card { background: #fff; border: 1px solid #d5e0ea; border-radius: 10px; padding: 17px; }
+.filters, .imports, .actions, .section-title {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+}
+.section-title { justify-content: space-between; }
+.imports label { display: flex; align-items: center; gap: 7px; }
+.imports input { width: 250px; max-width: 100%; }
+.run-status { display: block; margin: 5px 0; color: #18546f; }
+.filters { align-items: end; }
+.filters label { display: grid; gap: 5px; }
+.filters p { flex-basis: 100%; margin: 0; }
+#auto-action, #auto-status { flex-basis: 100%; }
+#auto-status { margin: 0; padding-left: 22px; line-height: 1.65; }
+#auto-status:empty { display: none; }
+button, select, input {
+  font: inherit; padding: 6px 11px; min-height: 36px; border-radius: 6px;
+  background: white; color: inherit; border: 1px solid #a9bdd1;
+}
+button { cursor: pointer; }
+button.primary { background: #176097; border-color: #176097; color: white; }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #267bb8; outline-offset: 2px; }
+p { margin: 8px 0; color: #405972; line-height: 1.55; }
+#feedback:empty, #files:empty { display: none; }
+#feedback { color: #18546f; white-space: pre-wrap; }
+#files { list-style: none; margin: 12px 0 0; padding: 0; }
+#files li { display: flex; gap: 10px; align-items: center; border-top: 1px solid #e2ebf3; padding: 6px 0; }
+#files li span { overflow-wrap: anywhere; flex: 1; }
+.warn { color: #854318; }
+.results { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; }
+th, td { padding: 9px 10px; text-align: left; vertical-align: middle; border-bottom: 1px solid #dce7ef; }
+th { background: #edf4fa; font-weight: 600; }
+td input { max-width: 125px; }
+td button, #files button { padding: 4px 8px; min-height: 29px; font-size: 13px; }
+
+@media (max-width: 680px) {
+  table, tbody { display: block; min-width: 0; }
+  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  tbody tr { display: grid; gap: 4px; padding: 8px 10px; margin: 6px 0; border: 1px solid #dce7ef; border-radius: 6px; }
+  td { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 4px 8px; border: 0; padding: 2px 0; }
+  td::before { content: attr(data-heading); color: #486178; }
+}

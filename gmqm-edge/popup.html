@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>质检工具</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <header>
+    <h1>账号与入口</h1>
+  </header>
+  <main>
+    <label class="field">GMQM 站点<select id="scope"></select></label>
+    <section aria-labelledby="workspace-heading">
+      <h2 id="workspace-heading">工作入口</h2>
+      <div class="actions" id="page-tools"></div>
+    </section>
+    <p id="notice" role="status" hidden></p>
+    <section aria-labelledby="account-heading">
+      <h2 id="account-heading">账号管理</h2>
+      <p id="account-state"></p>
+      <div class="actions">
+        <button type="button" data-action="normal" class="primary" disabled>普通用户登录</button>
+        <button type="button" data-action="admin" disabled>管理员登录</button>
+        <button type="button" data-action="logout" disabled>退出登录</button>
+      </div>
+      <ul id="results" aria-live="polite" hidden></ul>
+      <div><button id="edit" type="button">设置账号</button></div>
+      <form id="setup" hidden>
+        <div id="accounts"></div>
+        <div class="actions">
+          <button class="primary" type="submit">保存账号</button>
+          <button id="cancel" type="button">取消</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

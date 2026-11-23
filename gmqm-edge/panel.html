@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>质检工具</title>
+  <link rel="stylesheet" href="panel.css">
+  <script type="module" src="panel.js"></script>
+</head>
+<body>
+  <nav aria-label="插件功能">
+    <button id="tasks" type="button" aria-pressed="true">采集与复核</button>
+    <button id="accounts" type="button" aria-pressed="false">账号与入口</button>
+    <button id="models" type="button" aria-pressed="false">模型部署</button>
+    <button id="fold" type="button" aria-expanded="true">收起</button>
+  </nav>
+  <main id="frames">
+    <iframe id="tasks-frame" title="采集与复核"></iframe>
+    <iframe id="accounts-frame" title="账号与入口" hidden></iframe>
+    <iframe id="models-frame" title="模型部署" hidden></iframe>
+  </main>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模型部署</title>
+  <link rel="stylesheet" href="sop.css">
+  <link rel="stylesheet" href="models.css">
+  <script type="module" src="models-ui.js"></script>
+</head>
+<body>
+  <main>
+    <section class="card model-controls">
+      <h2>模型训练下载打包</h2>
+      <div class="actions">
+        <label>模型日期 <input id="model-date" type="date" required></label>
+        <button id="directory" type="button">选择「更新模型」目录</button>
+      </div>
+      <p id="selection" role="status"></p>
+      <fieldset class="actions" id="bases"><legend>GMQM 打包及验证基地</legend></fieldset>
+      <div class="actions">
+        <button id="run-models" class="primary" type="button">一键运行</button>
+        <button id="pause-models" type="button" disabled>暂停</button>
+      </div>
+      <div id="model-feedback" role="status"></div>
+    </section>
+    <section class="card">
+      <h2>分阶段运行</h2>
+      <ol class="model-stages" id="model-stages"></ol>
+    </section>
+    <section class="card">
+      <h2>模型与基地进度</h2>
+      <ul id="model-progress" class="model-progress"></ul>
+      <details>
+        <summary>导入已下载的原包</summary>
+        <div class="actions">
+          <label>模型 <select id="raw-model"></select></label>
+          <input id="raw-model-file" type="file" accept=".zip" aria-label="导入原包 ZIP">
+        </div>
+      </details>
+    </section>
+  </main>
+</body>
+</html>
