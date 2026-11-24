@@ -1,7 +1,7 @@
 import { exportCapture } from "./export-capture.js";
-import { pageAction } from "./page.js";
+import { ensureNormalSession } from "./normal-login.js";
 import { modelPage } from "./model-page.js";
-import { brain, modelRules, nextMar, randomSample, schemes, trainedModel } from "./model-rules.js";
+import { brain, matchesModelRule, modelChoices, modelRules, nextMar, packStarted, randomSample, schemes, trainedModel, trainingVersion } from "./model-rules.js";
 import { checkModelZip, readZip } from "./model-zip.js";
 import { modelDirectory, packageModel, readNamed, saveVerifiedFile } from "./model-storage.js";
 import { dailyExports, saveDailyExport } from "./daily-cache.js";
@@ -89,27 +89,7 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
       await chrome.tabs.update(tabId, {...(active ? {active:true} : {}),...(tab.url === url ? {} : {url})});
       if (refresh && tab.url === url) await chrome.tabs.reload(tabId);
     }
-    let loginSent = false;
-    let backToTarget = false;
-    await bounded(async () => {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.url === url && tab.status === "complete") return true;
-      if (tab.url?.startsWith(origin + "/#/login") && tab.status === "complete") {
-        const site = sites.find(entry => entry.origin === origin);
-        if (!site) throw new Error("请先在 Edge 登录 " + (origin === brain.company ? "公司" : "无锡") + " F.Brain");
-        if (!loginSent) {
-          const {accounts} = await chrome.storage.local.get("accounts");
-          const account = accounts?.[site.id];
-          if (!account) throw new Error("请先登录" + site.name + " GMQM 管理员");
-          const outcome = await runScript(tabId,pageAction,[origin,"login",account]);
-          loginSent = outcome?.state === "submitted";
-        }
-      } else if (!backToTarget && loginSent && tab.url === origin + "/#/home") {
-        backToTarget = true;
-        await chrome.tabs.update(tabId,{url});
-      }
-      return false;
-    }, "无法进入平台页面：" + url,45_000,350);
+    await ensureNormalSession(tabId,url,check);
     return tabId;
   }
   const onPage = async (tab,origin,action,params) => {
@@ -120,7 +100,8 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
     }
     return runScript(tab,modelPage,[origin,action,params ?? {}]);
   };
-  const targets = () => modelRules.filter(rule => state.models[rule.key]?.name);
+  const selectedModel = key => !state.excludedModels?.includes(key);
+  const targets = () => modelRules.filter(rule => state.models[rule.key]?.name && selectedModel(rule.key));
   async function each(items, work, {tracking = false, tolerate = false} = {}) {
     const run = async item => {
       check();
@@ -150,7 +131,11 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
     if (!tolerate && blocked.length) throw new Error("未完成：" + blocked.join("、"));
   }
   function expectModels() {
+    if (state.stages.scan && state.stages.scan !== "done") throw new Error("两套 F.Brain 的模型清单尚未查全，请先完成查找");
+    const unmapped = (state.unmappedModels ?? []).filter(model => selectedModel(model.key));
+    if (unmapped.length) throw new Error("已勾选模型缺少打包文件配置：" + unmapped.map(model=>model.name).join("、"));
     if (!state.stages.scan && !targets().length) throw new Error("请先查找模型，或从本地导入原包");
+    if (!targets().length && modelChoices(state).length) throw new Error("请至少勾选一个模型");
     return targets();
   }
   async function deploymentConfig(origin, tab, query) {
@@ -166,17 +151,30 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
   }
   const handlers = {
     async scan() {
+      if (packStarted(state)) return;
+      const sources = [];
       for (const origin of [brain.company,brain.wuxi]) {
         const tab = await navigate(origin,list,true);
         const {rows} = await onPage(tab,origin,"scan",{day:modelDay});
-        for (const rule of modelRules.filter(item => item.origin === origin)) {
+        sources.push({origin,rows});
+      }
+      const unmapped = new Map();
+      for (const {origin,rows} of sources) {
+        const rules = modelRules.filter(item => item.origin === origin);
+        for (const row of rows) {
+          if (row.state !== "训练成功" || row.created.slice(0,10) !== modelDay ||
+              rules.some(rule=>matchesModelRule(rule,row))) continue;
+          const key = JSON.stringify([origin,row.name,trainingVersion(row.version)]);
+          unmapped.set(key,{key,name:row.name,version:row.version,unmapped:true});
+        }
+        for (const rule of rules) {
           const trained = trainedModel(rule,rows,modelDay);
           const prior = state.models[rule.key];
           if (!trained) {
             if (!prior?.raw && !prior?.deployRequested && !prior?.deployed) delete state.models[rule.key];
             await notify(rule.key,state.models[rule.key] ? "保留本批已选模型" : modelDay + " 没有训练成功的匹配模型");
           } else {
-            if (prior?.name !== trained.name || prior?.version !== trained.version) {
+            if (prior?.name !== trained.name || trainingVersion(prior?.version) !== trainingVersion(trained.version)) {
               if (prior?.deployRequested || prior?.raw || prior?.deployed) {
                 await notify(rule.key,"保留本批已选版本 · " + prior.version);
                 continue;
@@ -187,6 +185,7 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
           }
         }
       }
+      state.unmappedModels = [...unmapped.values()];
     },
     async deploy(retryUnlisted) {
       const pending = expectModels().filter(rule => {
@@ -197,7 +196,7 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
       if (!retryUnlisted && pending.length) await modelDirectory(root,day,modelDay);
       await each(pending,async rule => {
         const item = state.models[rule.key], origin = rule.origin;
-        const query = {...item,day};
+        const query = {...item,version:trainingVersion(item.version),day};
         const excluded = new Set();
         const inspect = async () => {
           let tab = await navigate(origin,deployments,true);
@@ -267,7 +266,14 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
     },
     async download() {
       const directory = await modelDirectory(root,day,modelDay);
-      await each(expectModels(), async rule => {
+      const models = expectModels();
+      await each(models.filter(rule=>!state.models[rule.key].deployed),async rule=>{
+        const item = state.models[rule.key];
+        if (!(item.raw && (await readNamed(directory,item.raw))?.size) && !await finalZip(directory,item)) {
+          throw new Error("该模型尚未确认部署成功或取得原包，等勾选的模型全部就绪再下载");
+        }
+      });
+      await each(models, async rule => {
         const item = state.models[rule.key];
         if (item.raw && (await readNamed(directory,item.raw))?.size) return;
         if (await finalZip(directory,item)) return;
@@ -279,14 +285,14 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
         if (!item.deployed) throw new Error("需先确认 ONNX 部署成功");
         const origin = rule.origin;
         let tab = await navigate(origin,deployments);
-        const query = {...item,day,time:item.deployed};
+        const query = {...item,version:trainingVersion(item.version),day,time:item.deployed};
         const config = await deploymentConfig(origin,tab,query);
         if (!config.verified) {
           delete item.deployed;
           throw new Error("部署详情未通过 ONNX、最新模型及 285×285 核对；下次运行会重新查部署记录");
         }
         tab = await navigate(origin,deployments);
-        const name = rule.key + "_原包_" + item.name + "_" + item.version + ".zip";
+        const name = rule.key + "_原包_" + item.name + "_" + query.version + ".zip";
         const token = "__model_download_" + crypto.randomUUID().replaceAll("-","");
         const capture = (command,arg = null) => runScript(tab,exportCapture,[origin,token,command,arg,"zip"],"MAIN");
         try {
@@ -357,10 +363,16 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
     },
     async zip() {
       const directory = await modelDirectory(root,day,modelDay);
-      await each(expectModels(),async rule=>{
+      const models = expectModels();
+      await each(models,async rule=>{
+        const item = state.models[rule.key];
+        if (!(item.raw && (await readNamed(directory,item.raw))?.size) && !await finalZip(directory,item)) {
+          throw new Error("原包尚未就绪，等勾选的模型全部下载后再整理");
+        }
+      });
+      await each(models,async rule=>{
         const item = state.models[rule.key];
         if (await finalZip(directory,item)) return;
-        if (!item.raw) throw new Error("没有已关联的原包");
         Object.assign(item,await packageModel(directory,rule,item));
         await notify(rule.key,item.zipName + " · 原包、解压文件、ZIP 的 SHA-256 一致");
       });
@@ -469,11 +481,10 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
         confirmed.push({slot,zip:name});
       }
       log(site.name,"模型来源已设置，正在复核上一版和目标版本");
-      const refreshed = (await listMar(site,true)).rows;
+      const refreshed = (await listMar(site,true,false)).rows;
       if (refreshed[0]?.name !== latest.name || refreshed.some(row=>row.name===stem+".mar")) {
         throw new Error("上一版来源已变化或目标版本已存在");
       }
-      await chrome.tabs.update(tab,{active:true});
       section.mar = stem + ".mar";
       section.previous = latest.name;
       section.packRequested = true;
@@ -586,22 +597,31 @@ export function modelWorkflow({day, modelDay, windowId, selected, root, state, l
       await notify(label,"阶段完成");
     } catch (error) {
       state.stages[key] = signal.aborted ? "paused" : "error";
-      await notify(label,error.message);
+      await notify(label,signal.aborted ? "已暂停，重跑时会核对已提交的任务" : error.message);
       throw error;
     }
   }
   return {
     async run(stage) {
-      if (stage !== "all") return runStage(stage, stage === "deploy" ? true : undefined);
+      if (stage !== "all") {
+        if (stage !== "scan" && state.stages.scan === "done" && !Array.isArray(state.unmappedModels) && !packStarted(state)) {
+          await runStage("scan");
+        }
+        return runStage(stage, stage === "deploy" ? true : undefined);
+      }
       const bases = baseTargets();
       if (bases.every(site=>state.bases[site.id]?.verified)) return {alreadyDone:true};
       await resumePendingPacks(bases);
       if (bases.every(site=>state.bases[site.id]?.packed)) return runStage("verify",false);
-      if (state.stages.scan !== "done" || !targets().length) await runStage("scan");
-      if (!targets().length && bases.every(site=>!state.bases[site.id]?.packed)) return {empty:true};
+      if (state.stages.scan !== "done" || !Array.isArray(state.unmappedModels) || !modelChoices(state).length) {
+        await runStage("scan");
+      }
+      if (!expectModels().length && bases.every(site=>!state.bases[site.id]?.packed)) return {empty:true};
+
+      for (const key of ["deploy","download","zip"]) await runStage(key,false);
 
       const problems = [];
-      for (const key of ["deploy","download","zip","mar","verify"]) {
+      for (const key of ["mar","verify"]) {
         try {
           await runStage(key,false);
         } catch (error) {

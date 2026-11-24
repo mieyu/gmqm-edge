@@ -1,5 +1,5 @@
 import { pageAction } from "./page.js";
-import { siteForUrl, sites, validAccounts } from "./sites.js";
+import { siteForUrl, sites, validAccount } from "./sites.js";
 import { openWorkPages } from "./workspace.js";
 
 let running = false;
@@ -91,8 +91,9 @@ async function run(message) {
     const accounts = message.action === "logout"
       ? null
       : (await chrome.storage.local.get("accounts")).accounts;
-    if (message.action !== "logout" && !validAccounts(accounts)) {
-      return { error: "请先设置账号" };
+    if (message.action === "normal" && !validAccount(accounts?.normal)) return {error:"请先设置普通账号"};
+    if (message.action === "admin" && targets.some(site=>!validAccount(accounts?.[site.id]))) {
+      return {error:"请先设置所选站点的管理员账号"};
     }
     const status = { running: true, rows: targets.map(site =>
       ({ id: site.id, kind: "pending", message: "等待处理" })) };

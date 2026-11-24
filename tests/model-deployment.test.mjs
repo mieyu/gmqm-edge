@@ -51,6 +51,7 @@ test("matches the observed F.Brain native download only for the selected model a
   source.searchParams.set("file_path","/fixture/新喷涂膜合并数据集(V97)_" + name + "(v90)_cls_dynamic");
   const record = {url:source.href};
   assert.equal(matchingModelDownload(record,origin,name,"V90"),source.href);
+  assert.equal(matchingModelDownload(record,origin,name,"v90（最优版本）"),source.href);
   assert.equal(matchingModelDownload(record,origin,name,"v9"),"");
   assert.equal(matchingModelDownload(record,"http://192.168.254.12:31001",name,"V90"),"");
   assert.equal(matchingModelDownload(record,origin,"喷涂膜基础模型V86","V90"),"");
@@ -94,7 +95,7 @@ test("waits through the GMQM empty table and returns the newest displayed MAR fi
   assert.deepEqual(result.rows.map(record => record.name), ["test_v2.0.0.176.mar", "test_v2.0.0.175.mar"]);
 });
 
-test("sets inheritance on the correct file when a group ID and MAR options are repeated", async t => {
+test("selects the exact inherited slot and closes a reopened menu before submitting MAR", async t => {
   const origin = "http://gmqm.test";
   const pack = {stem:"test_v2.0.0.176",scheme:"湖北恩捷算法方案_v01",previous:"test_v2.0.0.175.mar"};
   const shown = () => [1];
@@ -119,12 +120,14 @@ test("sets inheritance on the correct file when a group ID and MAR options are r
         controls(elem("", {value:"继承MAR文件"})),controls(input)],
       classList: {contains: name => name === "el-table__row"},
     });
-    return {row,input,slot:{id:"1",name:"点涂膜",file}};
+    return {row,input,menu,slot:{id:"1",name:"点涂膜",file}};
   });
   const table = elem("", {querySelectorAll(selector) {
     return selector === ".el-table__header-wrapper th" ? [elem("来源配置")] : cells.map(cell => cell.row);
   }});
   let mouseDown = false;
+  let submissions = 0;
+  const submit = elem("提交打包",{click:()=>{submissions++;}});
   globalThis.window = {};
   globalThis.window.top = globalThis.window;
   globalThis.location = new URL(origin + "/#/model/modelPack");
@@ -143,6 +146,8 @@ test("sets inheritance on the correct file when a group ID and MAR options are r
       if (selector === ".el-form-item label") return [scheme];
       if (selector === ".el-table") return [table];
       if (selector === ".el-select-dropdown") return [...openMenus.keys()];
+      if (selector === "button") return [submit];
+      if (selector === ".el-message--success" && submissions) return [elem("打包任务已提交")];
       return [];
     },
   };
@@ -156,16 +161,42 @@ test("sets inheritance on the correct file when a group ID and MAR options are r
   assert.deepEqual(await modelPage(origin,"inherit",{...pack,slot:cells[1].slot}),{set:true});
   assert.deepEqual(cells.map(cell => cell.input.value),["",pack.previous,""]);
   assert.equal(openMenus.size,0);
+
+  for (const cell of cells) cell.input.value = pack.previous;
+  const last = cells.at(-1);
+  last.input.value = ""; // The open filter temporarily replaces the selected label.
+  openMenus.set(last.menu,()=>{
+    last.input.value = pack.previous;
+    openMenus.delete(last.menu);
+  });
+  let blurred = false;
+  document.activeElement = {closest:selector=>selector === ".el-select",blur:()=>{
+    blurred = true;
+    document.activeElement = null;
+  }};
+  const params = {...pack,slots:cells.map(({slot})=>({slot}))};
+  assert.deepEqual(await modelPage(origin,"submit",params),{clicked:true});
+  assert.equal(blurred,true);
+  assert.equal(openMenus.size,0);
+  last.input.value = "other.mar";
+  const changed = await modelPage(origin,"submit",params);
+  assert.equal(changed.beforeSubmission,true);
+  assert.match(changed.error,/模型来源未通过提交前核对/);
+  assert.equal(submissions,1);
 });
 
 const workflowScenarios = [
   ["verify","backfills a newly selected base when verification starts"],
   ["all","continues verification when another base cannot pack and skips already completed work"],
   ["fresh","runs a fresh model batch from training lookup through GMQM verification in one click"],
+  ["blocked-model","holds the next stage until the selected models are ready or deliberately deselected"],
+  ["unmapped-model","shows an unmapped trained model and prevents an incomplete batch"],
   ["pack-timeout","keeps the packing page open on timeout and checks the same MAR on restart"],
 ];
 for (const [scenario,name] of workflowScenarios) test(name, async t => {
-  const fresh = scenario === "fresh";
+  const modelBlocked = scenario === "blocked-model";
+  const unmapped = scenario === "unmapped-model";
+  const fresh = scenario === "fresh" || modelBlocked || unmapped;
   const packingTimeout = scenario === "pack-timeout";
   const stage = fresh || packingTimeout ? "all" : scenario;
   const [wuxi,jintan,suzhou,hubei] = sites;
@@ -179,7 +210,9 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
   const day = "2026-11-20";
   const modelDay = fresh ? "2026-11-16" : "2026-11-19";
   const deployedAt = "2026-11-20 15:12:00";
-  const training = {name:rule.families[0]+"v82",version:"v89",created:modelDay+" 16:24:00",state:"训练成功"};
+  const version = "v89";
+  const training = {name:rule.families[0]+"v82",version:version+"最优版本",created:modelDay+" 16:24:00",state:"训练成功"};
+  const blocked = {name:"喷涂膜基础模型V89",version:"v92",created:modelDay+" 18:24:32",state:"训练成功"};
   if (!fresh) {
     state.models[rule.key] = {name:training.name,deployed:deployedAt,zipName:"涂布.zip",
       hashes:{[file]:await sha256(bytes),[json]:await sha256(bytes)}};
@@ -197,6 +230,7 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
   const inspected = [];
   const steps = [];
   let packTabId;
+  let checkingLatestPack = false;
   let statusChecks = 0;
   let stallPacking = packingTimeout;
   let now = Date.now();
@@ -243,6 +277,7 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
       },
       get:async id => tabs[id],
       update:async (id,change) => {
+        if (checkingLatestPack) assert.notEqual(change.active,true,"Rechecking the previous MAR must stay in the background");
         if (packTabId !== undefined) {
           assert.notEqual(id,packTabId,"The packing tab must stay on the submitted form");
           assert.notEqual(change.active,true,"Waiting for MAR must not switch tabs");
@@ -264,12 +299,16 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
         assert.equal(args.day,modelDay);
         result = {rows:origin===rule.origin ? [
           {...training,name:rule.families[0]+"v83",version:"v90",created:"2026-11-19 16:24:00"},training,
+          ...(modelBlocked ? [blocked] : []),
+          ...(unmapped ? [{...blocked,name:"其他训练成功模型"}] : []),
         ] : []};
       } else if (action === "deployments") {
         assert.equal(args.day,day);
-        assert.equal(args.version,training.version);
+        if (args.name === blocked.name) return [{result:{matches:[]}}];
+        assert.equal(args.version,version);
         result = {matches:deployed ? [{status:"部署成功",time:deployedAt}] : []};
       } else if (action === "deploy") {
+        if (args.name === blocked.name) return [{result:{error:"Fixture failed deployment",beforeSubmission:true}}];
         deployed = true;
         result = {submitted:true};
       } else if (action === "detail") {
@@ -291,7 +330,10 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
       } else if (action === "prepare") {
         if (site.id === hubei.id) return [{result:{error:"Mock Hubei form unavailable",beforeSubmission:true}}];
         result = {slots:[{id:"2",name:"涂布膜",file}]};
+      } else if (action === "upload") {
+        checkingLatestPack = true;
       } else if (action === "submit") {
+        checkingLatestPack = false;
         packed.push(site.id);
         packTabId = tab.id;
       } else if (action === "packStatus") {
@@ -318,7 +360,20 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
   if (scenario === "all") selected.push(hubei.id);
   const run = bases => modelWorkflow({day,modelDay,windowId:1,selected:bases,
     root,state,log:()=>{},signal:new AbortController().signal}).run(stage);
-  if (packingTimeout) {
+  if (unmapped) {
+    await assert.rejects(run(selected),/已勾选模型缺少打包文件配置：其他训练成功模型/);
+    assert.equal(state.unmappedModels.length,1);
+    assert.ok(!steps.includes("deploy") && !steps.includes("download"));
+    state.excludedModels = [state.unmappedModels[0].key];
+    await run(selected);
+  } else if (modelBlocked) {
+    await assert.rejects(run(selected),/未完成：喷涂/);
+    assert.equal(state.models["涂布"].deployed,deployedAt);
+    assert.equal(state.models["喷涂"].deployed,undefined);
+    assert.ok(!steps.includes("download") && !steps.includes("submit"));
+    state.excludedModels = ["喷涂"];
+    await run(selected);
+  } else if (packingTimeout) {
     await assert.rejects(run(selected),/尚未确认打包结果，已保留打包页/);
     assert.equal(state.bases[jintan.id].packTabId,packTabId);
     assert.equal(state.bases[jintan.id].packed,undefined);
@@ -340,7 +395,7 @@ for (const [scenario,name] of workflowScenarios) test(name, async t => {
       assert.deepEqual(steps.filter(action=>["scan","deploy","download","submit","validate"].includes(action)),
         ["scan","scan","deploy","download","submit","validate"]);
       assert.ok(stored.has("涂布.zip"));
-      assert.ok(stored.has("涂布_原包_" + training.name + "_" + training.version + ".zip"));
+      assert.ok(stored.has("涂布_原包_" + training.name + "_" + version + ".zip"));
     }
   }
   assert.deepEqual(packed,[jintan.id]);

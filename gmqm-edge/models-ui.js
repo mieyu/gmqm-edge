@@ -1,5 +1,5 @@
 import { chinaDate } from "./sop.js";
-import { modelRules } from "./model-rules.js";
+import { modelChoices, modelRules, packStarted } from "./model-rules.js";
 import { sites } from "./sites.js";
 import { workWindow } from "./workspace.js";
 import { modelArchiveFolders, modelDirectory, saveDirectory, savedDirectory, saveVerifiedFile } from "./model-storage.js";
@@ -9,6 +9,7 @@ import { createModelState, modelKey, modelStages, modelWorkflow } from "./model-
 const byId = id => document.getElementById(id);
 const date = byId("model-date");
 const boxes = byId("bases");
+const picks = byId("model-picks");
 const phases = byId("model-stages");
 const input = byId("raw-model-file");
 const feedback = byId("model-feedback");
@@ -42,14 +43,31 @@ function render() {
   const selected = selectedBases();
   const activeSites = sites.filter(site => selected.includes(site.id));
   const disabled = Boolean(job) || loadedModelDay !== date.value;
-  for (const el of [date,byId("directory"),byId("run-models"),input,manualModel,...boxes.querySelectorAll("input")]) {
+  const locked = packStarted(state);
+  for (const el of [date,byId("directory"),byId("run-models"),...boxes.querySelectorAll("input")]) {
     el.disabled = disabled;
   }
+  input.disabled = manualModel.disabled = disabled || locked;
   byId("pause-models").disabled = !job || job.signal.aborted;
   byId("selection").textContent = date.value && date.validity.valid
     ? "查找 " + date.value + " 创建且训练成功的模型 · 作业日期 " + workDay + " · " +
       (root ? [root.name,...modelArchiveFolders(workDay,date.value)].join("\\") : "尚未选择本地模型目录")
     : "请选择模型日期";
+  const choices = modelChoices(state);
+  picks.replaceChildren(...choices.map(model => {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = model.key;
+    box.checked = !state.excludedModels?.includes(model.key);
+    box.disabled = disabled || locked;
+    const description = document.createElement("span");
+    description.textContent = (model.unmapped ? "缺少打包配置 · " : model.key + " · ") +
+      model.name + (model.version ? " · " + model.version : "");
+    label.append(box,description);
+    return label;
+  }));
+  if (!choices.length) picks.textContent = state.stages.scan === "done" ? "该日期没有训练成功的模型" : "查找后显示模型，默认全选";
   phases.replaceChildren(...modelStages.map(([id,label])=>{
     const item = document.createElement("li");
     const button = document.createElement("button");
@@ -162,7 +180,7 @@ byId("directory").addEventListener("click",async ()=>{
 input.addEventListener("change",async ()=>{
   const [file] = input.files;
   input.value = "";
-  if (!file || job || !date.reportValidity() || loadedModelDay !== date.value) return;
+  if (!file || job || packStarted(state) || !date.reportValidity() || loadedModelDay !== date.value) return;
   const rule = modelRules.find(entry=>entry.key===manualModel.value);
   const modelDay = date.value;
   const day = chinaDate();
@@ -196,9 +214,33 @@ input.addEventListener("change",async ()=>{
 
 byId("run-models").addEventListener("click",()=>void start("all"));
 byId("pause-models").addEventListener("click",()=>{
-  job?.abort();
+  job?.abort(new Error("已暂停"));
   message("正在等待当前页面操作返回。");
   render();
+});
+picks.addEventListener("change",async event=>{
+  const {value,checked} = event.target;
+  if (job || loadedModelDay !== date.value || !value) return;
+  const key = modelKey(workDay,date.value);
+  try {
+    await navigator.locks.request("gmqm-model-workflow",{ifAvailable:true},async lock=>{
+      if (!lock) throw new Error("已有模型流程在运行");
+      const current = (await chrome.storage.local.get(key))[key] ?? state;
+      if (packStarted(current)) throw new Error("本批已提交打包，模型选择已固定");
+      const excluded = new Set(current.excludedModels);
+      if (checked) excluded.delete(value);
+      else excluded.add(value);
+      current.excludedModels = [...excluded];
+      for (const stage of ["deploy","download","zip"]) delete current.stages[stage];
+      await chrome.storage.local.set({[key]:current});
+      if (key === modelKey(workDay,date.value)) state = current;
+    });
+    message("");
+  } catch (error) {
+    message(error.message);
+  } finally {
+    render();
+  }
 });
 date.addEventListener("change",()=>{
   message("");

@@ -3,6 +3,8 @@
 fieldset { border: 1px solid #dce7ef; border-radius: 6px; padding: 8px; }
 fieldset label { display: inline-flex; align-items: center; gap: 4px; }
 .model-controls input[type=checkbox] { min-height: auto; }
+.model-picks { display: grid; gap: 5px; }
+.model-picks label { overflow-wrap: anywhere; }
 .model-stages, .model-progress { display: grid; gap: 7px; padding-left: 23px; margin-bottom: 0; }
 .model-stages li span { margin-left: 8px; }
 .model-progress { margin-bottom: 12px; }

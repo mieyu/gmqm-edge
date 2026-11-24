@@ -1,4 +1,5 @@
 import { collectionPage } from "./collection-page.js";
+import { ensureNormalSession } from "./normal-login.js";
 import { sites } from "./sites.js";
 import { collectionPlan, films, labels, sampleNumbers } from "./sop.js";
 
@@ -21,13 +22,7 @@ async function siteTab(site, windowId, existingId) {
   const tab = Number.isInteger(existingId)
     ? await chrome.tabs.update(existingId, { url })
     : await chrome.tabs.create({ url, active: false, windowId });
-  const end = Date.now() + 15_000;
-  do {
-    const current = await chrome.tabs.get(tab.id);
-    if (current.status === "complete" && current.url !== site.origin + "/#/ej/etc") return current;
-    await pause(350);
-  } while (Date.now() < end);
-  return chrome.tabs.get(tab.id);
+  return ensureNormalSession(tab.id,url);
 }
 
 function runOnPage(tabId, origin, job, phase) {
@@ -58,8 +53,8 @@ async function runSite(site, jobs, options) {
   let tab;
   try {
     tab = await siteTab(site, windowId, options.tabs?.get(site.id));
-  } catch {
-    for (const job of due) update(job, { state: "error", message: "样本图库网页未打开" });
+  } catch (error) {
+    for (const job of due) update(job, { state: "error", message: error.message });
     return;
   }
   const report = (job, result) => update(job, { ...result, tabId: tab.id });
@@ -108,11 +103,11 @@ export async function runInsectLabels(jobs, {windowId, update}) {
       const site = sites.find(site => site.id === job.site);
       const url = site.origin + "/#/samplingSampleLibrary";
       const existing = (await chrome.tabs.query({windowId})).find(tab => tab.url === url);
-      const tab = existing ?? await siteTab(site, windowId);
+      const tab = existing ? await ensureNormalSession(existing.id,url) : await siteTab(site, windowId);
       const result = await runOnPage(tab.id, site.origin, job, "labels");
       update(job, { ...result, tabId: tab.id });
-    } catch {
-      update(job, {state: "error", message: "无法读取当天图库的标签"});
+    } catch (error) {
+      update(job, {state: "error", message: error.message});
     }
   }
 }

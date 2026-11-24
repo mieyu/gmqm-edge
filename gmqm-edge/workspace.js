@@ -1,12 +1,11 @@
 import { sites } from "./sites.js";
+import { brain } from "./model-rules.js";
+import { ensureNormalSession } from "./normal-login.js";
 
 export const pageTools = [
   { id: "grading", label: "自动判等查询", path: "/#/ej/etc" },
   { id: "samples", label: "样本图库", path: "/#/samplingSampleLibrary" },
-  { id: "fbrain", label: "F.Brain 入口", urls: [
-    "http://10.9.30.252:31001/#/home",
-    "http://192.168.254.12:31001/#/home",
-  ] },
+  { id: "fbrain", label: "F.Brain 普通用户登录", urls: Object.values(brain).map(origin => origin + "/#/home") },
 ];
 
 export function workPages(toolId, scope) {
@@ -38,6 +37,7 @@ export async function openWorkPages(toolId, scope, windowId) {
   const tabs = await chrome.tabs.query(windowQuery);
   let opened = 0;
   let first;
+  const errors = [];
   for (const url of urls) {
     try {
       const existing = tabs.find(tab => tab.url === url || tab.pendingUrl === url);
@@ -46,12 +46,13 @@ export async function openWorkPages(toolId, scope, windowId) {
       ) });
       first ??= tab.id;
       opened += 1;
-    } catch {
-      // Continue opening the remaining sites and count only successful results.
+      await ensureNormalSession(tab.id,url);
+    } catch (error) {
+      errors.push(error.message);
     }
   }
   if (!opened) return { error: "浏览器未能打开工作页面" };
   const focused = await chrome.tabs.update(first, { active: true });
   if (Number.isInteger(focused?.windowId)) await chrome.windows.update(focused.windowId, { focused: true });
-  return { opened, total: urls.length };
+  return errors.length ? {opened,total:urls.length,error:errors.join("；")} : {opened,total:urls.length};
 }

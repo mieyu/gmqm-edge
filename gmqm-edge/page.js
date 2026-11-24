@@ -1,5 +1,5 @@
 // Edge injects this function alone into the isolated world of the target tab.
-export async function pageAction(origin, action, account) {
+export async function pageAction(origin, action, account, platform = "gmqm") {
   if (window.top !== window || location.origin !== origin) return { state: "wrong-site" };
 
   const visible = (selector, predicate = () => true) =>
@@ -8,14 +8,19 @@ export async function pageAction(origin, action, account) {
       predicate(element));
   const one = elements => elements.length === 1 ? elements[0] : null;
   const loginRoute = /^#\/login(?:[/?]|$)/.test(location.hash);
-  const username = one(visible('input[type="text"][placeholder="请输入用户名"]'));
-  const password = one(visible('input[type="password"][placeholder="请输入密码"]'));
-  const submit = one(visible("button.login-btn", element => element.textContent.trim() === "登录"));
+  const brain = platform === "fbrain";
+  const username = one(visible(brain ? 'input[placeholder="请输入手机号码"]' :
+    'input[type="text"][placeholder="请输入用户名"]'));
+  const password = one(visible(brain ? 'input.ivu-input[placeholder="请输入密码"]' :
+    'input[type="password"][placeholder="请输入密码"]'));
+  const submit = one(visible(brain ? "button.ivu-btn-primary.ivu-btn-long" : "button.login-btn",
+    element => element.textContent.trim() === "登录"));
   const profile = one(visible('.ivu-dropdown-rel > a[href="javascript:void(0)"]',
     element => element.querySelector('img[alt="logo"]') && element.innerText.trim()));
 
   if (loginRoute && username && password && submit) {
     if (action !== "login") return { state: "signed-out" };
+    if (!account?.username || !account?.password) return { state: "unavailable" };
     if (submit.disabled || submit.classList.contains("ivu-btn-loading")) return { state: "busy" };
     if (username.disabled || username.readOnly || password.disabled || password.readOnly) {
       return { state: "unavailable" };

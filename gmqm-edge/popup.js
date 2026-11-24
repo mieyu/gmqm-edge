@@ -1,4 +1,4 @@
-import { siteForUrl, sites, validAccounts } from "./sites.js";
+import { siteForUrl, sites, validAccount } from "./sites.js";
 import { pageTools } from "./workspace.js";
 
 const byId = id => document.getElementById(id);
@@ -8,11 +8,15 @@ const edit = byId("edit");
 const results = byId("results");
 const actionButtons = [...document.querySelectorAll("[data-action]")];
 const pageButtons = [];
-const entries = [{ id: "normal", name: "普通用户（四站共用）" }, ...sites];
+const entries = [
+  { id: "normal", name: "GMQM 普通用户（四站共用）" },
+  { id: "fbrain", name: "F.Brain 普通用户（公司、无锡）" },
+  ...sites.map(site => ({ id: site.id, name: site.name + "管理员" })),
+];
 const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 const params = new URL(location.href).searchParams;
 const hostId = Number(params.get("host")) || currentTab?.windowId;
-let accountsConfigured = false;
+let savedAccounts;
 let status;
 let busy = false;
 let editing = false;
@@ -25,10 +29,14 @@ function showNotice(message = "") {
 
 function render() {
   const running = busy || !!status?.running;
-  byId("account-state").textContent = accountsConfigured ? "已保存账号" : "首次登录前请设置账号";
+  const normal = validAccount(savedAccounts?.normal);
+  const fbrain = validAccount(savedAccounts?.fbrain);
+  byId("account-state").textContent = `GMQM 普通账号${normal ? "已保存" : "待设置"} · F.Brain 普通账号${fbrain ? "已保存" : "待设置"}`;
+  const targets = scope.value === "all" ? sites : sites.filter(site => site.id === scope.value);
   scope.disabled = running;
   for (const button of actionButtons) {
-    button.disabled = running || (button.dataset.action !== "logout" && !accountsConfigured);
+    button.disabled = running || (button.dataset.action === "normal" && !normal) ||
+      (button.dataset.action === "admin" && !targets.every(site=>validAccount(savedAccounts?.[site.id])));
   }
   for (const button of pageButtons) button.disabled = running;
   setup.hidden = !editing;
@@ -64,7 +72,7 @@ function buildAccountFields() {
   for (const entry of entries) {
     const group = document.createElement("fieldset");
     const legend = document.createElement("legend");
-    legend.textContent = entry.id === "normal" ? entry.name : entry.name + "管理员";
+    legend.textContent = entry.name;
     group.append(legend);
     for (const [name, title] of [["username", "账号"], ["password", "密码"]]) {
       const label = document.createElement("label");
@@ -74,7 +82,6 @@ function buildAccountFields() {
       input.name = entry.id + "-" + name;
       input.type = name === "password" ? "password" : "text";
       input.autocomplete = "off";
-      input.required = true;
       label.append(input);
       group.append(label);
     }
@@ -85,7 +92,7 @@ function buildAccountFields() {
 async function refresh() {
   const local = await chrome.storage.local.get("accounts");
   const session = await chrome.storage.session.get("status");
-  accountsConfigured = validAccounts(local.accounts);
+  savedAccounts = local.accounts;
   status = session.status;
   render();
 }
@@ -111,6 +118,7 @@ for (const site of sites) scope.add(new Option(site.name, site.id));
 scope.value = sites.some(site => site.id === params.get("site"))
   ? params.get("site") : siteForUrl(currentTab?.url)?.id ?? "all";
 buildAccountFields();
+scope.addEventListener("change",render);
 
 for (const tool of pageTools) {
   const button = document.createElement("button");
@@ -144,8 +152,7 @@ edit.addEventListener("click", async () => {
   const { accounts } = await chrome.storage.local.get("accounts");
   for (const entry of entries) {
     const account = accounts?.[entry.id];
-    setup.elements.namedItem(entry.id + "-username").value =
-      account?.username ?? (entry.id === "normal" ? "" : "luster");
+    setup.elements.namedItem(entry.id + "-username").value = account?.username ?? "";
     setup.elements.namedItem(entry.id + "-password").value = account?.password ?? "";
   }
   editing = true;
@@ -166,9 +173,10 @@ setup.addEventListener("submit", event => {
       username: data.get(id + "-username").trim(),
       password: data.get(id + "-password"),
     }]));
-    if (!validAccounts(accounts)) throw new Error("请填完整五组账号和密码");
+    const configured = Object.entries(accounts).filter(([,account])=>account.username || account.password);
+    if (configured.some(([,account])=>!validAccount(account))) throw new Error("已填写的账号请同时填写密码");
     try {
-      await chrome.storage.local.set({ accounts });
+      await chrome.storage.local.set({ accounts:Object.fromEntries(configured) });
     } catch {
       throw new Error("无法保存凭据，请重试");
     }

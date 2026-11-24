@@ -17,6 +17,8 @@ export async function modelPage(origin, action, args = {}) {
   let submitting = false;
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const txt = e => (e?.innerText ?? e?.textContent ?? "").trim();
+  // executeScript injects this function without the extension's module imports.
+  const version = label => label?.normalize("NFKC").trim().replace(/\s*(?:\(\s*最优版本\s*\)|最优版本)$/u,"").toLowerCase();
   const shown = e => e.getClientRects().length && getComputedStyle(e).visibility === "visible";
   const visible = (selector, root = document) => root ? [...root.querySelectorAll(selector)].filter(shown) : [];
   const one = array => array.length === 1 ? array[0] : null;
@@ -91,16 +93,20 @@ export async function modelPage(origin, action, args = {}) {
     await wait(() => txt(scope.querySelector(".ivu-select-selected-value")) === name, "选项未生效：" + name);
   }
   const elMenus = () => visible(".el-select-dropdown");
+  async function closeElMenus(message) {
+    const focused = document.activeElement;
+    if (focused?.closest?.(".el-select")) focused.blur();
+    if (!elMenus().length) return;
+    // Element UI closes its portaled menus on an outside mouse down/up pair.
+    for (const type of ["mousedown", "mouseup"]) {
+      document.body.dispatchEvent(new MouseEvent(type, { bubbles:true }));
+    }
+    await wait(() => !elMenus().length,message,4500);
+  }
   async function chooseEl(control, name, label) {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        if (elMenus().length) {
-          // Element UI closes its portaled menus on an outside mouse down/up pair.
-          for (const type of ["mousedown", "mouseup"]) {
-            document.body.dispatchEvent(new MouseEvent(type, { bubbles:true }));
-          }
-          await wait(() => !elMenus().length, label + "的旧下拉菜单未关闭", 3500);
-        }
+        await closeElMenus(label + "的旧下拉菜单未关闭");
         const input = await wait(() => {
           const current = control();
           return !masks() && current && !current.disabled && current;
@@ -118,6 +124,7 @@ export async function modelPage(origin, action, args = {}) {
         // The input temporarily holds the search query while a filterable menu is open.
         await wait(() => !elMenus().length && control()?.value === name,
           label + "未保留选项 " + name, 3500);
+        await closeElMenus(label + "的下拉菜单未关闭");
         return;
       } catch (error) {
         if (attempt || !correct()) throw error;
@@ -177,7 +184,7 @@ export async function modelPage(origin, action, args = {}) {
     if (action === "deploy") {
       await readAllTrainingModels();
       const matchingRow = () => one(getRows().filter(el => txt(el.cells[1]) === args.name &&
-        txt(el.cells[5]).toLowerCase() === args.version.toLowerCase() &&
+        version(txt(el.cells[5])) === version(args.version) &&
         txt(el.cells[6]) === "训练成功" && txt(el.cells[9]) === args.created));
       const row = await findAcrossPages(matchingRow);
       if (!row) throw new Error("无法复核训练成功的模型名称、版本和时间");
@@ -211,9 +218,9 @@ export async function modelPage(origin, action, args = {}) {
         const text = form.querySelector('input[placeholder="请选择模型"]')?.value.trim() ?? "";
         const suffix = text.slice(args.name.length);
         return text.startsWith(args.name + "-") &&
-          suffix.toLowerCase().split(/[^a-z0-9.]+/).includes(args.version.toLowerCase());
+          suffix.toLowerCase().split(/[^a-z0-9.]+/).includes(version(args.version));
       };
-      if (!matchesSelection()) throw new Error("部署弹窗显示的模型与选中的训练记录不符");
+      if (!matchesSelection()) throw new Error("部署弹窗实际显示「" + selected + "」，预期「" + args.name + " · " + version(args.version) + "」");
       await chooseIvu(formField(form, "模型阶段"), "最新模型");
       await chooseIvu(formField(form, "部署模型格式"), "ONNX");
       const dimensions = ["宽度值","高度值"].map(label => one(visible("input.ivu-input-number-input", formField(form,label))));
@@ -244,7 +251,7 @@ export async function modelPage(origin, action, args = {}) {
       await firstPage();
       const matchingRows = () => getRows().filter(row => {
         const c = identity(row);
-        return c[2] === args.name && c[4]?.toLowerCase() === args.version.toLowerCase() &&
+        return c[2] === args.name && version(c[4]) === version(args.version) &&
           c[6] === "ONNX" && c[7]?.startsWith(args.day);
       });
       if (action === "deployments") {
@@ -287,7 +294,8 @@ export async function modelPage(origin, action, args = {}) {
       }, "部署配置详情未加载");
       const [,height,width] = content.match(/高\s*(\d+)\s+宽\s*(\d+)/);
       return { verified: height === "285" && width === "285" && content.includes("最新模型") &&
-        content.includes("ONNX") && content.toLowerCase().includes(args.version.toLowerCase()),
+        content.includes("ONNX") && (content.match(/(?<![a-z0-9.])v\d+(?:\.\d+)*(?![a-z0-9.])/gi) ?? [])
+          .some(label => version(label) === version(args.version)),
       height, width };
     }
     if (action === "mar") {
@@ -429,7 +437,7 @@ export async function modelPage(origin, action, args = {}) {
       return { slots: rows.map(row => ({id:txt(row.cells[0]), name:txt(row.cells[1]), file:txt(row.cells[6])})) };
     }
     const verifyPack = () => headerField()?.value === args.stem && schemeInput()?.value === args.scheme;
-    if (!verifyPack()) throw new Error("打包表单的 MAR 名称或方案已切换");
+    if (action !== "submit" && !verifyPack()) throw new Error("打包表单的 MAR 名称或方案已切换");
     // GMQM reuses a group ID for the three point-coating files in Hubei.
     const packRow = slot => one(getRows().filter(row => txt(row.cells[0]) === slot.id && txt(row.cells[6]) === slot.file));
     const source = slot => selectInput(packRow(slot)?.cells[7]);
@@ -470,13 +478,14 @@ export async function modelPage(origin, action, args = {}) {
       }
     }
     if (action === "submit") {
+      await closeElMenus("提交前未能关闭打包页的下拉菜单");
       const submit = await wait(() => {
         const button = btn("提交打包");
-        return !masks() && button && !button.disabled && button;
+        return !masks() && !elMenus().length && button && !button.disabled && button;
       }, "打包提交按钮未就绪");
-      if (!verifyPack() || getRows().length !== args.slots.length || elMenus().length) {
-        throw new Error("打包表单已切换或还有未关闭的下拉菜单");
-      }
+      if (!verifyPack()) throw new Error("提交前 MAR 名称或模型方案已变化");
+      const count = getRows().length;
+      if (count !== args.slots.length) throw new Error("提交前模型槽位数量不符，当前 " + count + "，已核对 " + args.slots.length);
       const unmatched = args.slots.find(({slot,zip}) => zip
         ? source(slot)?.value !== "导入模型文件" || imported(slot) !== zip
         : source(slot)?.value !== "继承MAR文件" || inherited(slot)?.value !== args.previous);

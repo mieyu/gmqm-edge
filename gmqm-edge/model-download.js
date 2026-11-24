@@ -1,8 +1,10 @@
+import { trainingVersion } from "./model-rules.js";
+
 const endpoint = "/file/api/v1/download_model_by_path";
 
 export function matchingModelDownload(item, origin, name, version) {
   const norm = value => value.normalize("NFKC").toLowerCase();
-  const identity = norm(name + "(" + version + ")");
+  const identity = norm(name + "(" + trainingVersion(version) + ")");
   for (const address of [item.finalUrl, item.url]) {
     if (!address) continue;
     let url;

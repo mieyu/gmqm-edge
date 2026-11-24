@@ -21,18 +21,32 @@ export function modelSearchTerm(rule, name) {
   return rule.families.find(family => name.startsWith(family)) ?? rule.families[0];
 }
 
-export function trainedModel(rule, rows, modelDay) {
+export function matchesModelRule(rule,row) {
   const ending = rule.vote ? new RegExp("^(?:[\\s_-]*v\\d+(?:\\.\\d+)*)?[_\\s-]+vote[_\\s-]*" + rule.vote + "$","i") :
     /^(?:[\s_-]*v\d+(?:\.\d+)*)?$/i;
-  return rows.filter(row => {
-    const family = modelSearchTerm(rule, row.name);
-    return row.name.startsWith(family) && ending.test(row.name.slice(family.length).trim()) &&
-      row.created.slice(0, 10) === modelDay && row.state === "训练成功" &&
-      (!rule.dataset || rule.dataset.test(row.dataset));
-  })
+  const family = modelSearchTerm(rule,row.name);
+  return row.name.startsWith(family) && ending.test(row.name.slice(family.length).trim()) &&
+    (!rule.dataset || rule.dataset.test(row.dataset));
+}
+
+export function trainingVersion(label) {
+  return label?.normalize("NFKC").trim().replace(/\s*(?:\(\s*最优版本\s*\)|最优版本)$/u,"").toLowerCase();
+}
+
+export function trainedModel(rule, rows, modelDay) {
+  return rows.filter(row => row.created.slice(0,10) === modelDay && row.state === "训练成功" && matchesModelRule(rule,row))
     .sort((a, b) => b.created.localeCompare(a.created) ||
       b.version.localeCompare(a.version, undefined, { numeric: true }))[0];
 }
+
+export function modelChoices(state) {
+  return [
+    ...modelRules.flatMap(({key}) => state.models[key]?.name ? [{key,...state.models[key]}] : []),
+    ...(state.unmappedModels ?? []),
+  ];
+}
+
+export const packStarted = state => Object.values(state.bases).some(site => site.packRequested || site.packed);
 
 export function nextMar(name) {
   const match = /^(.*[._v])([0-9]+)(?:\.mar)+$/i.exec(name);

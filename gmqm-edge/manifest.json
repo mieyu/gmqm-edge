@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "质检工具",
-  "version": "1.8.10",
+  "version": "1.8.13",
   "description": "统一管理 GMQM 账号和常用工作页面，并打开 F.Brain 平台。",
   "permissions": ["scripting", "storage", "downloads"],
   "host_permissions": [

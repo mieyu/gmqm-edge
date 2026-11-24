@@ -15,9 +15,5 @@ export function siteForUrl(url) {
   }
 }
 
-export function validAccounts(accounts) {
-  return [accounts?.normal, ...sites.map(site => accounts?.[site.id])].every(
-    entry => typeof entry?.username === "string" && entry.username.trim() &&
-      typeof entry.password === "string" && entry.password.length > 0,
-  );
-}
+export const validAccount = entry => Boolean(typeof entry?.username === "string" && entry.username.trim() &&
+  typeof entry.password === "string" && entry.password.length > 0);
